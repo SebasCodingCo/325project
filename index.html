@@ -254,7 +254,6 @@
 <body>
 
 <header>
-  <div class="logo">Cine<span>Match</span></div>
   <div class="header-right">
     <div class="session-controls" id="sessionControls">
     <div class="session-badge" id="sessionBadge" style="display:none">
@@ -262,12 +261,6 @@
       <button class="session-switch-btn" onclick="showSessionPicker()">Switch</button>
     </div>
     <button class="btn btn-ghost btn-sm" id="sessionPickerBtn" onclick="showSessionPicker()">Join / New Session</button>
-  </div>
-    <div style="display:flex;align-items:center;gap:6px">
-      <span class="health-dot" id="hdot"></span>
-      <span class="status-text" id="htext">Checking API…</span>
-    </div>
-  </div>
 </header>
 
 <!-- Session modal -->
@@ -290,20 +283,8 @@
 </div>
 
 <section class="hero">
-  <h1>Discover films<br><em>made for you.</em></h1>
-  <p>Rate movies you love and our model will learn your taste — recommendations improve with every rating.</p>
+  <h1>Discover films<br></h1>
 </section>
-
-<!-- Onboarding hint -->
-<div style="padding:0 24px">
-  <div class="onboarding" style="margin:0 auto 32px">
-    <span class="onboarding-icon">💡</span>
-    <div class="onboarding-text">
-      <strong>How it works:</strong> Search for movies you've seen and rate them using the panel on the right.
-      After each rating the model retrains instantly — then hit <strong>Get Recommendations</strong> to see updated picks tailored to your taste.
-    </div>
-  </div>
-</div>
 
 <!-- Controls -->
 <div class="controls">
@@ -332,8 +313,7 @@
     </div>
     <div class="cards" id="cardsGrid"></div>
     <div class="state-box" id="stateBox">
-      <span class="icon">🎬</span>
-      <p>Rate a few movies on the right, then click <strong>Get Recommendations</strong>.</p>
+
     </div>
   </div>
 
@@ -341,7 +321,7 @@
   <div class="side-panel">
 
     <div class="panel-card">
-      <h3>Search &amp; Rate</h3>
+      <h3>Search</h3>
       <div class="search-row">
         <input type="text" id="searchInput" placeholder="Movie title…" oninput="debounceSearch()" />
         <button class="btn btn-ghost btn-sm" onclick="clearSearch()">Clear</button>
@@ -373,7 +353,7 @@
     </div>
 
     <div class="panel-card">
-      <h3>My Ratings <span style="font-size:.72rem;color:var(--muted);font-family:var(--mono);font-weight:300">(this session)</span></h3>
+      <h3>My Ratings <span style="font-size:.72rem;color:var(--muted);font-family:var(--mono);font-weight:300"></span></h3>
       <div class="my-ratings-list" id="myRatingsList">
         <span class="empty-note">No ratings yet — search for a movie above.</span>
       </div>
