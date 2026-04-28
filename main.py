@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import random
 import threading
@@ -30,11 +30,15 @@ svd        = None
 movies_df  = None
 ratings_df = None
 
-retrain_lock = threading.Lock()
+# Build a lookup dict { movieId: set_of_genres } once at load time for fast filtering
+movie_genres_lookup: dict = {}
+
+retrain_lock  = threading.Lock()
+needs_retrain = False
 
 # ── Startup ────────────────────────────────────────────────────────────────────
 def load_resources():
-    global svd, movies_df, ratings_df
+    global svd, movies_df, ratings_df, movie_genres_lookup
     try:
         from surprise import dump as sdump
         _, svd = sdump.load(MODEL_PATH)
@@ -49,6 +53,11 @@ def load_resources():
             .str.replace(r"\(\d{4}\)", "", regex=True)
             .str.strip()
         )
+        # Build genre lookup for fast filtering
+        movie_genres_lookup = {
+            int(row["movieId"]): set(str(row["genres"]).split("|"))
+            for _, row in movies_df.iterrows()
+        }
         print(f"Movies loaded: {len(movies_df)} rows")
     except Exception as e:
         print(f"Could not load movies.csv ({e}).")
@@ -63,7 +72,6 @@ load_resources()
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def generate_session_user_id() -> int:
-    """Generate a user ID that doesn't exist anywhere in ratings.csv."""
     existing = set(ratings_df["userId"].tolist()) if ratings_df is not None else set()
     base = max(existing) + 1 if existing else 10000
     candidate = base + random.randint(0, 99999)
@@ -72,14 +80,12 @@ def generate_session_user_id() -> int:
     return int(candidate)
 
 def session_exists(user_id: int) -> bool:
-    """A session is valid if the user ID exists anywhere in ratings.csv."""
     if ratings_df is None:
         return False
     return int(user_id) in ratings_df["userId"].values
 
 def save_rating(user_id: int, movie_id: int, rating: float):
-    """Write a new rating to ratings.csv and update the in-memory dataframe."""
-    global ratings_df
+    global ratings_df, needs_retrain
     new_row = pd.DataFrame([{
         "userId":    user_id,
         "movieId":   movie_id,
@@ -88,23 +94,29 @@ def save_rating(user_id: int, movie_id: int, rating: float):
     }])
     ratings_df = pd.concat([ratings_df, new_row], ignore_index=True)
     ratings_df.to_csv(RATINGS_PATH, index=False)
+    needs_retrain = True
 
 def retrain_model():
-    global svd
+    global svd, needs_retrain
+    if not needs_retrain:
+        return
     if svd is None or ratings_df is None:
         return
     with retrain_lock:
         try:
             from surprise import Dataset, Reader
+            # Exclude placeholder rows (movieId == -1)
+            clean = ratings_df[ratings_df["movieId"] != -1]
             reader   = Reader(rating_scale=(0.5, 5.0))
-            data     = Dataset.load_from_df(ratings_df[["userId", "movieId", "rating"]], reader)
+            data     = Dataset.load_from_df(clean[["userId", "movieId", "rating"]], reader)
             trainset = data.build_full_trainset()
             svd.fit(trainset)
-            print(f"Model retrained on {len(ratings_df)} ratings")
+            needs_retrain = False
+            print(f"Model retrained on {len(clean)} ratings")
         except Exception as e:
             print(f"Retrain failed: {e}")
 
-def get_top_n(user_id: int, n: int = 10) -> List[dict]:
+def get_top_n(user_id: int, n: int = 10, genres: List[str] = None) -> List[dict]:
     if svd is None or movies_df is None or ratings_df is None:
         demo = [
             {"movieId": 318,  "title": "Shawshank Redemption, The",      "genres": "Crime|Drama",                 "predicted_rating": 4.95},
@@ -121,9 +133,20 @@ def get_top_n(user_id: int, n: int = 10) -> List[dict]:
         return demo[:n]
 
     # Exclude everything this user has already rated
-    rated_ids = set(int(x) for x in ratings_df[ratings_df["userId"] == user_id]["movieId"].tolist())
-    all_ids   = [int(x) for x in movies_df["movieId"].tolist()]
-    unrated   = [mid for mid in all_ids if mid not in rated_ids]
+    rated_ids = set(int(x) for x in ratings_df[
+        (ratings_df["userId"] == user_id) & (ratings_df["movieId"] != -1)
+    ]["movieId"].tolist())
+
+    all_ids = [int(x) for x in movies_df["movieId"].tolist()]
+    unrated = [mid for mid in all_ids if mid not in rated_ids]
+
+    # Filter by genres BEFORE predicting — movie must contain ALL selected genres
+    if genres:
+        genre_set = set(genres)
+        unrated = [
+            mid for mid in unrated
+            if genre_set.issubset(movie_genres_lookup.get(mid, set()))
+        ]
 
     preds = [svd.predict(int(user_id), int(mid)) for mid in unrated]
     top   = sorted(preds, key=lambda x: x.est, reverse=True)[:n]
@@ -175,21 +198,17 @@ def root():
 
 @app.get("/api/session")
 def new_session():
-    """Generate a brand new unique session user ID and register it."""
     uid = generate_session_user_id()
-    # Write a placeholder row so the user ID exists in ratings.csv
-    # (allows joining the session later even before any ratings)
     save_rating(uid, -1, -1)
     return {"user_id": uid, "is_new": True}
 
 @app.get("/api/session/{user_id}")
 def join_session(user_id: int):
-    """Join an existing session. Valid if the user ID exists in ratings.csv."""
     if not session_exists(user_id):
         raise HTTPException(status_code=404, detail="Session not found.")
-    ratings = ratings_df[ratings_df["userId"] == user_id]
-    # Exclude the placeholder row (movieId == -1)
-    real_ratings = ratings[ratings["movieId"] != -1]
+    real_ratings = ratings_df[
+        (ratings_df["userId"] == user_id) & (ratings_df["movieId"] != -1)
+    ]
     return {
         "user_id":      user_id,
         "is_new":       False,
@@ -198,11 +217,13 @@ def join_session(user_id: int):
 
 @app.get("/api/recommend", response_model=RecommendResponse)
 def recommend(
-    user_id: int = Query(...),
-    n: int       = Query(10, ge=1, le=50),
+    user_id: int      = Query(...),
+    n: int            = Query(10, ge=1, le=50),
+    genres: str       = Query(None, description="Comma-separated genres e.g. Comedy,Drama"),
 ):
+    genre_list = [g.strip() for g in genres.split(",")] if genres else None
     retrain_model()
-    return {"user_id": user_id, "recommendations": get_top_n(user_id, n)}
+    return {"user_id": user_id, "recommendations": get_top_n(user_id, n, genre_list)}
 
 @app.get("/api/search", response_model=List[SearchResult])
 def search_movies(q: str = Query(..., min_length=1)):
@@ -233,8 +254,9 @@ def rate_movie(body: RateRequest):
 def get_my_ratings(user_id: int = Query(...)):
     if ratings_df is None:
         return {"user_id": user_id, "ratings": []}
-    # Exclude placeholder row
-    rows = ratings_df[(ratings_df["userId"] == user_id) & (ratings_df["movieId"] != -1)]
+    rows = ratings_df[
+        (ratings_df["userId"] == user_id) & (ratings_df["movieId"] != -1)
+    ]
     results = []
     if movies_df is not None:
         id_to_title = movies_df.set_index("movieId")["title"].to_dict()
@@ -253,9 +275,9 @@ def get_my_ratings(user_id: int = Query(...)):
 def health():
     total_users = int(ratings_df["userId"].nunique()) if ratings_df is not None else 0
     return {
-        "status":        "ok",
-        "model_loaded":  svd is not None,
-        "movies_loaded": movies_df is not None,
+        "status":         "ok",
+        "model_loaded":   svd is not None,
+        "movies_loaded":  movies_df is not None,
         "ratings_loaded": ratings_df is not None,
-        "total_users":   total_users,
+        "total_users":    total_users,
     }
