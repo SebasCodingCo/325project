@@ -60,8 +60,37 @@
     font-size: .72rem; color: var(--muted);
     background: var(--surface2); border: 1px solid var(--border);
     padding: 5px 12px; border-radius: 20px;
+    display: flex; align-items: center; gap: 8px;
   }
   .session-badge strong { color: var(--gold); font-weight: 500; }
+  .session-switch-btn {
+    background: none; border: none; color: var(--muted); font-size: .7rem;
+    cursor: pointer; padding: 0; text-decoration: underline;
+    font-family: var(--mono);
+  }
+  .session-switch-btn:hover { color: var(--cream); }
+
+  /* ── Session modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px); z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 32px; width: 100%; max-width: 420px;
+  }
+  .modal h2 { font-family: var(--serif); font-size: 1.4rem; margin-bottom: 8px; }
+  .modal p  { font-size: .85rem; color: var(--muted); margin-bottom: 24px; line-height: 1.6; }
+  .modal-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+  .modal-divider span { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+  .modal-divider::before, .modal-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .modal-input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .modal-input-row input { flex: 1; }
+  .modal-error { font-size: .78rem; color: #e07070; min-height: 18px; margin-bottom: 4px; }
+  .modal-close { position: absolute; top: 16px; right: 16px; background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; }
   .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; transition: background .3s; }
   .health-dot.ok  { background: var(--green); box-shadow: 0 0 6px #4caf8288; }
   .health-dot.err { background: var(--red); }
@@ -218,7 +247,13 @@
 <header>
   <div class="logo">Cine<span>Match</span></div>
   <div class="header-right">
-    <div class="session-badge">Session ID: <strong id="sessionIdDisplay">—</strong></div>
+    <div class="session-controls" id="sessionControls">
+    <div class="session-badge" id="sessionBadge" style="display:none">
+      Session: <strong id="sessionIdDisplay">—</strong>
+      <button class="session-switch-btn" onclick="showSessionPicker()">Switch</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="sessionPickerBtn" onclick="showSessionPicker()">Join / New Session</button>
+  </div>
     <div style="display:flex;align-items:center;gap:6px">
       <span class="health-dot" id="hdot"></span>
       <span class="status-text" id="htext">Checking API…</span>
@@ -226,21 +261,28 @@
   </div>
 </header>
 
-<section class="hero">
-  <h1>Discover films<br><em>made for you.</em></h1>
-  <p>Rate movies you love and our model will learn your taste — recommendations improve with every rating.</p>
-</section>
+<!-- Session modal -->
+<div class="modal-overlay" id="sessionModal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" id="modalCloseBtn" onclick="closeSessionPicker()" style="display:none">✕</button>
+    <h2>Welcome to CineMatch</h2>
+    <p>Start a new session to get personalised recommendations, or enter an existing session ID to continue where you left off.</p>
 
-<!-- Onboarding hint -->
-<div style="padding:0 24px">
-  <div class="onboarding" style="margin:0 auto 32px">
-    <span class="onboarding-icon">💡</span>
-    <div class="onboarding-text">
-      <strong>How it works:</strong> Search for movies you've seen and rate them using the panel on the right.
-      After each rating the model retrains instantly — then hit <strong>Get Recommendations</strong> to see updated picks tailored to your taste.
+    <button class="btn" style="width:100%" onclick="createNewSession()">Start New Session</button>
+
+    <div class="modal-divider"><span>or resume existing</span></div>
+
+    <div class="modal-input-row">
+      <input type="number" id="joinSessionInput" placeholder="Enter session ID…" />
+      <button class="btn btn-ghost" onclick="joinSession()">Join</button>
     </div>
+    <div class="modal-error" id="joinError"></div>
   </div>
 </div>
+
+<section class="hero">
+  <h1>Discover films<br></h1>
+</section>
 
 <!-- Controls -->
 <div class="controls">
@@ -293,7 +335,7 @@
           </div>
         </div>
         <div class="rate-actions">
-          <button class="btn btn-sm" onclick="submitRating()">Save</button>
+          <button class="btn btn-sm" onclick="submitRating()">Save &amp; Retrain</button>
           <button class="btn btn-ghost btn-sm" onclick="cancelRate()">Cancel</button>
         </div>
         <div class="retrain-indicator" id="retrainIndicator">
@@ -317,17 +359,52 @@
 const API = '';
 let SESSION_USER_ID = null;
 
-// ── Session init ──────────────────────────────────────────────────────────────
-async function initSession() {
+// ── Session modal ─────────────────────────────────────────────────────────────
+function showSessionPicker() {
+  document.getElementById('sessionModal').classList.remove('hidden');
+  document.getElementById('joinError').textContent = '';
+  document.getElementById('joinSessionInput').value = '';
+}
+
+function closeSessionPicker() {
+  if (!SESSION_USER_ID) return; // can't close before a session is set
+  document.getElementById('sessionModal').classList.add('hidden');
+}
+
+async function createNewSession() {
   try {
     const d = await (await fetch(`${API}/api/session`)).json();
-    SESSION_USER_ID = d.user_id;
-    document.getElementById('sessionIdDisplay').textContent = SESSION_USER_ID;
+    setSession(d.user_id);
+    document.getElementById('sessionModal').classList.add('hidden');
   } catch {
-    // Fallback: generate client-side if API unreachable
-    SESSION_USER_ID = 10000 + Math.floor(Math.random() * 99999);
-    document.getElementById('sessionIdDisplay').textContent = SESSION_USER_ID;
+    document.getElementById('joinError').textContent = 'Could not create session. Is the API running?';
   }
+}
+
+async function joinSession() {
+  const val = document.getElementById('joinSessionInput').value.trim();
+  const err = document.getElementById('joinError');
+  err.textContent = '';
+  if (!val) { err.textContent = 'Enter a session ID.'; return; }
+  try {
+    const res = await fetch(`${API}/api/session/${val}`);
+    if (res.status === 404) { err.textContent = 'Session not found. Check the ID and try again.'; return; }
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    setSession(d.user_id);
+    document.getElementById('sessionModal').classList.add('hidden');
+    refreshMyRatings();
+  } catch {
+    err.textContent = 'Could not join session.';
+  }
+}
+
+function setSession(userId) {
+  SESSION_USER_ID = userId;
+  document.getElementById('sessionIdDisplay').textContent = userId;
+  document.getElementById('sessionBadge').style.display = 'flex';
+  document.getElementById('sessionPickerBtn').style.display = 'none';
+  document.getElementById('modalCloseBtn').style.display = 'block';
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────
@@ -494,7 +571,7 @@ async function submitRating() {
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'Error');
     indicator.style.display = 'none';
-    showToast(`Saved ${selectedStars}★`, 'success');
+    showToast(`Saved ${selectedStars}★ — model updated!`, 'success');
     refreshMyRatings();
     setTimeout(cancelRate, 1600);
   } catch(e) {
@@ -557,7 +634,8 @@ function escJs(s) {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
-  await Promise.all([initSession(), checkHealth()]);
+  await checkHealth();
+  showSessionPicker(); // always show modal on load
 })();
 </script>
 </body>

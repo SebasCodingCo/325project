@@ -18,6 +18,7 @@ pip install fastapi uvicorn scikit-surprise pandas numpy
 > If you get import errors run:
 > ```bash
 > pip install "numpy<2" scikit-surprise --force-reinstall
+> pip install uvicorn    may need to be ran
 > ```
 
 ---

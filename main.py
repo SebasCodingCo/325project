@@ -30,10 +30,6 @@ svd        = None
 movies_df  = None
 ratings_df = None
 
-# In-memory store for session ratings: { (user_id, movie_id): rating }
-user_ratings: dict = {}
-
-# Lock to prevent concurrent retraining conflicts
 retrain_lock = threading.Lock()
 
 # ── Startup ────────────────────────────────────────────────────────────────────
@@ -67,33 +63,49 @@ load_resources()
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def generate_session_user_id() -> int:
-    """Generate a unique user ID that won't clash with existing dataset IDs."""
-    base = (ratings_df["userId"].max() + 1) if ratings_df is not None else 10000
-    return base + random.randint(0, 99999)
+    """Generate a user ID that doesn't exist anywhere in ratings.csv."""
+    existing = set(ratings_df["userId"].tolist()) if ratings_df is not None else set()
+    base = max(existing) + 1 if existing else 10000
+    candidate = base + random.randint(0, 99999)
+    while candidate in existing:
+        candidate = base + random.randint(0, 99999)
+    return int(candidate)
+
+def session_exists(user_id: int) -> bool:
+    """A session is valid if the user ID exists anywhere in ratings.csv."""
+    if ratings_df is None:
+        return False
+    return int(user_id) in ratings_df["userId"].values
+
+def save_rating(user_id: int, movie_id: int, rating: float):
+    """Write a new rating to ratings.csv and update the in-memory dataframe."""
+    global ratings_df
+    new_row = pd.DataFrame([{
+        "userId":    user_id,
+        "movieId":   movie_id,
+        "rating":    rating,
+        "timestamp": 0,
+    }])
+    ratings_df = pd.concat([ratings_df, new_row], ignore_index=True)
+    ratings_df.to_csv(RATINGS_PATH, index=False)
 
 def retrain_model():
-    """Merge in-memory ratings with original dataset and retrain SVD in place."""
     global svd
     if svd is None or ratings_df is None:
         return
     with retrain_lock:
         try:
-            from surprise import Dataset, Reader, SVD as SurpriseSVD
-            new_rows = [
-                {"userId": uid, "movieId": mid, "rating": rat}
-                for (uid, mid), rat in user_ratings.items()
-            ]
-            combined = pd.concat([ratings_df, pd.DataFrame(new_rows)], ignore_index=True)
+            from surprise import Dataset, Reader
             reader   = Reader(rating_scale=(0.5, 5.0))
-            data     = Dataset.load_from_df(combined[["userId", "movieId", "rating"]], reader)
+            data     = Dataset.load_from_df(ratings_df[["userId", "movieId", "rating"]], reader)
             trainset = data.build_full_trainset()
             svd.fit(trainset)
-            print(f"Model retrained with {len(new_rows)} new rating(s)")
+            print(f"Model retrained on {len(ratings_df)} ratings")
         except Exception as e:
             print(f"Retrain failed: {e}")
 
 def get_top_n(user_id: int, n: int = 10) -> List[dict]:
-    if svd is None or movies_df is None:
+    if svd is None or movies_df is None or ratings_df is None:
         demo = [
             {"movieId": 318,  "title": "Shawshank Redemption, The",      "genres": "Crime|Drama",                 "predicted_rating": 4.95},
             {"movieId": 527,  "title": "Schindler's List",                "genres": "Drama|War",                   "predicted_rating": 4.88},
@@ -108,28 +120,23 @@ def get_top_n(user_id: int, n: int = 10) -> List[dict]:
         ]
         return demo[:n]
 
-    # Exclude movies already rated (original dataset + in-memory)
-    original_rated = set()
-    if ratings_df is not None:
-        original_rated = set(ratings_df[ratings_df["userId"] == user_id]["movieId"].tolist())
-    memory_rated = {mid for (uid, mid) in user_ratings if uid == user_id}
-    rated_ids    = original_rated | memory_rated
+    # Exclude everything this user has already rated
+    rated_ids = set(int(x) for x in ratings_df[ratings_df["userId"] == user_id]["movieId"].tolist())
+    all_ids   = [int(x) for x in movies_df["movieId"].tolist()]
+    unrated   = [mid for mid in all_ids if mid not in rated_ids]
 
-    all_ids = movies_df["movieId"].tolist()
-    unrated = [mid for mid in all_ids if mid not in rated_ids]
-
-    preds = [svd.predict(user_id, mid) for mid in unrated]
+    preds = [svd.predict(int(user_id), int(mid)) for mid in unrated]
     top   = sorted(preds, key=lambda x: x.est, reverse=True)[:n]
 
     results = []
     for p in top:
-        row = movies_df[movies_df["movieId"] == p.iid]
+        row = movies_df[movies_df["movieId"] == int(p.iid)]
         if not row.empty:
             r = row.iloc[0]
             results.append({
                 "movieId":          int(p.iid),
-                "title":            r["title"],
-                "genres":           r["genres"],
+                "title":            str(r["title"]),
+                "genres":           str(r["genres"]),
                 "predicted_rating": round(float(p.est), 2),
             })
     return results
@@ -168,8 +175,26 @@ def root():
 
 @app.get("/api/session")
 def new_session():
-    """Generate a fresh unique user ID for a new session."""
-    return {"user_id": generate_session_user_id()}
+    """Generate a brand new unique session user ID and register it."""
+    uid = generate_session_user_id()
+    # Write a placeholder row so the user ID exists in ratings.csv
+    # (allows joining the session later even before any ratings)
+    save_rating(uid, -1, -1)
+    return {"user_id": uid, "is_new": True}
+
+@app.get("/api/session/{user_id}")
+def join_session(user_id: int):
+    """Join an existing session. Valid if the user ID exists in ratings.csv."""
+    if not session_exists(user_id):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    ratings = ratings_df[ratings_df["userId"] == user_id]
+    # Exclude the placeholder row (movieId == -1)
+    real_ratings = ratings[ratings["movieId"] != -1]
+    return {
+        "user_id":      user_id,
+        "is_new":       False,
+        "rating_count": int(len(real_ratings)),
+    }
 
 @app.get("/api/recommend", response_model=RecommendResponse)
 def recommend(
@@ -184,41 +209,53 @@ def search_movies(q: str = Query(..., min_length=1)):
     if movies_df is None:
         raise HTTPException(status_code=503, detail="movies.csv not loaded")
     mask = movies_df["title"].str.contains(q, case=False, na=False)
-    return movies_df[mask].head(20)[["movieId", "title", "genres"]].to_dict(orient="records")
+    results = movies_df[mask].head(20)[["movieId", "title", "genres"]].copy()
+    return [
+        {"movieId": int(r["movieId"]), "title": str(r["title"]), "genres": str(r["genres"])}
+        for _, r in results.iterrows()
+    ]
 
 @app.post("/api/rate", response_model=RateResponse)
 def rate_movie(body: RateRequest):
     if not (0.5 <= body.rating <= 5.0):
         raise HTTPException(status_code=422, detail="Rating must be between 0.5 and 5.0")
-    user_ratings[(body.user_id, body.movie_id)] = body.rating
+    if not session_exists(body.user_id):
+        raise HTTPException(status_code=404, detail="Session not found. Start a new session first.")
+    save_rating(body.user_id, body.movie_id, body.rating)
     return {
         "user_id":  body.user_id,
         "movie_id": body.movie_id,
         "rating":   body.rating,
-        "message":  "Rating saved and model updated.",
+        "message":  "Rating saved.",
     }
 
 @app.get("/api/my-ratings")
 def get_my_ratings(user_id: int = Query(...)):
-    rows = [
-        {"movieId": mid, "rating": rat}
-        for (uid, mid), rat in user_ratings.items()
-        if uid == user_id
-    ]
-    if movies_df is not None and rows:
+    if ratings_df is None:
+        return {"user_id": user_id, "ratings": []}
+    # Exclude placeholder row
+    rows = ratings_df[(ratings_df["userId"] == user_id) & (ratings_df["movieId"] != -1)]
+    results = []
+    if movies_df is not None:
         id_to_title = movies_df.set_index("movieId")["title"].to_dict()
         id_to_genre = movies_df.set_index("movieId")["genres"].to_dict()
-        for r in rows:
-            r["title"]  = id_to_title.get(r["movieId"], "Unknown")
-            r["genres"] = id_to_genre.get(r["movieId"], "")
-    return {"user_id": user_id, "ratings": rows}
+        for _, r in rows.iterrows():
+            mid = int(r["movieId"])
+            results.append({
+                "movieId": mid,
+                "rating":  float(r["rating"]),
+                "title":   str(id_to_title.get(mid, "Unknown")),
+                "genres":  str(id_to_genre.get(mid, "")),
+            })
+    return {"user_id": user_id, "ratings": results}
 
 @app.get("/health")
 def health():
+    total_users = int(ratings_df["userId"].nunique()) if ratings_df is not None else 0
     return {
-        "status":         "ok",
-        "model_loaded":   svd is not None,
-        "movies_loaded":  movies_df is not None,
+        "status":        "ok",
+        "model_loaded":  svd is not None,
+        "movies_loaded": movies_df is not None,
         "ratings_loaded": ratings_df is not None,
-        "memory_ratings": len(user_ratings),
+        "total_users":   total_users,
     }
