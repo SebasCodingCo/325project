@@ -25,25 +25,13 @@ pip install fastapi uvicorn scikit-surprise pandas numpy
 
 ### 3. Run the server
 
-```bash
 uvicorn main:app --reload
-```
 
-Then open **http://localhost:8000** in your browser.
+Open **http://localhost:8000** in your browser.
 
----
+### 4. Use the model
 
-## API Endpoints
-
-| Method | URL | Description |
-|--------|-----|-------------|
-| GET | `/` | Serves the frontend |
-| GET | `/api/recommend?user_id=1&n=10` | Top-N recommendations for a user |
-| GET | `/api/search?q=pulp` | Search movies by title |
-| GET | `/api/users?limit=20` | List available user IDs |
-| GET | `/health` | API + data status |
-
----
+choose a session and add ratings, then get recommendations, which will retrain the model, then filter by the movies you want to see
 
 ## Preloaded demo if no info provided
 If `svd_model.pkl`, `movies.csv`, or `ratings.csv` are missing, the API still
