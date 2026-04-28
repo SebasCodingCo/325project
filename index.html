@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CineMatch — Movie Recommender</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0b0c10;
+    --surface:  #13141a;
+    --surface2: #1c1e27;
+    --border:   #2a2d3a;
+    --gold:     #e8c97a;
+    --gold-dim: #a8894a;
+    --cream:    #f4ede0;
+    --muted:    #6b7080;
+    --green:    #4caf82;
+    --red:      #c0392b;
+    --radius:   12px;
+    --mono:     'DM Sans', sans-serif;
+    --serif:    'Playfair Display', serif;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--cream);
+    font-family: var(--mono);
+    font-weight: 300;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 9999; opacity: 0.6;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 48px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+    background: rgba(11,12,16,0.92);
+    backdrop-filter: blur(12px);
+    z-index: 100;
+  }
+  .logo { font-family: var(--serif); font-size: 1.5rem; color: var(--gold); }
+  .logo span { font-style: italic; color: var(--cream); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .session-badge {
+    font-size: .72rem; color: var(--muted);
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 5px 12px; border-radius: 20px;
+  }
+  .session-badge strong { color: var(--gold); font-weight: 500; }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; transition: background .3s; }
+  .health-dot.ok  { background: var(--green); box-shadow: 0 0 6px #4caf8288; }
+  .health-dot.err { background: var(--red); }
+  .status-text { font-size: .75rem; color: var(--muted); }
+
+  /* ── Hero ── */
+  .hero { text-align: center; padding: 60px 24px 36px; position: relative; }
+  .hero::after {
+    content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 280px;
+    background: radial-gradient(ellipse, rgba(232,201,122,.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero h1 { font-family: var(--serif); font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.1; margin-bottom: 12px; }
+  .hero h1 em { font-style: italic; color: var(--gold); }
+  .hero p { color: var(--muted); font-size: .93rem; max-width: 460px; margin: 0 auto 28px; line-height: 1.7; }
+
+  /* ── Onboarding banner ── */
+  .onboarding {
+    max-width: 640px; margin: 0 auto 32px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 22px;
+    display: flex; align-items: flex-start; gap: 14px;
+  }
+  .onboarding-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
+  .onboarding-text { font-size: .85rem; color: var(--muted); line-height: 1.6; }
+  .onboarding-text strong { color: var(--cream); }
+
+  /* ── Controls ── */
+  .controls { display: flex; align-items: flex-end; gap: 12px; justify-content: center; flex-wrap: wrap; padding: 0 24px 40px; }
+  label { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-dim); display: block; margin-bottom: 6px; }
+  input[type="number"], input[type="text"] {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--cream); font-family: var(--mono); font-size: .93rem;
+    padding: 11px 14px; border-radius: var(--radius); outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input[type="number"] { width: 90px; }
+  input:focus { border-color: var(--gold-dim); box-shadow: 0 0 0 3px rgba(232,201,122,.12); }
+
+  .btn {
+    background: var(--gold); color: #0b0c10; border: none;
+    padding: 11px 26px; border-radius: var(--radius);
+    font-family: var(--mono); font-weight: 500; font-size: .88rem;
+    cursor: pointer; letter-spacing: .04em;
+    transition: background .2s, transform .15s, box-shadow .2s;
+  }
+  .btn:hover { background: #f0d890; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(232,201,122,.2); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .btn-ghost { background: transparent; color: var(--cream); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--surface2); box-shadow: none; }
+  .btn-sm { padding: 7px 14px; font-size: .8rem; }
+
+  /* ── Main layout ── */
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 32px;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+    align-items: start;
+  }
+
+  /* ── Side panel ── */
+  .side-panel { display: flex; flex-direction: column; gap: 24px; }
+  .panel-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+  .panel-card h3 { font-family: var(--serif); font-size: 1.1rem; margin-bottom: 16px; color: var(--cream); }
+
+  /* Search */
+  .search-row { display: flex; gap: 8px; }
+  .search-row input { flex: 1; }
+  .search-results { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; display: none; max-height: 320px; overflow-y: auto; }
+  .sr-item { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--border); transition: background .15s; }
+  .sr-item:last-child { border-bottom: none; }
+  .sr-item:hover { background: var(--surface2); }
+  .sr-title { font-size: .88rem; }
+  .sr-genre { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+  .sr-rate-btn { font-size: .72rem; background: var(--surface2); border: 1px solid var(--border); color: var(--gold); padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: background .15s; white-space: nowrap; flex-shrink: 0; margin-left: 8px; }
+  .sr-rate-btn:hover { background: var(--border); }
+
+  /* Rate form */
+  .rate-form { display: none; flex-direction: column; gap: 14px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .rate-form.visible { display: flex; }
+  .rate-movie-title { font-family: var(--serif); font-size: 1rem; color: var(--gold); line-height: 1.3; }
+  .star-picker { display: flex; gap: 6px; }
+  .star-pick { font-size: 1.6rem; cursor: pointer; color: var(--border); transition: color .1s; user-select: none; }
+  .star-pick.lit { color: var(--gold); }
+  .rate-actions { display: flex; gap: 8px; }
+  .rate-toast { font-size: .8rem; padding: 8px 12px; border-radius: 8px; display: none; }
+  .rate-toast.success { background: rgba(76,175,130,.15); border: 1px solid rgba(76,175,130,.3); color: #7de0b0; }
+  .rate-toast.error   { background: rgba(192,57,43,.12);  border: 1px solid rgba(192,57,43,.3);  color: #e07070; }
+  .retrain-indicator { font-size: .75rem; color: var(--muted); display: flex; align-items: center; gap: 6px; display: none; }
+  .mini-spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin .7s linear infinite; }
+
+  /* My ratings */
+  .my-ratings-list { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+  .my-rating-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface2); border-radius: 8px; }
+  .my-rating-title { font-size: .83rem; color: var(--cream); flex: 1; padding-right: 8px; }
+  .my-rating-stars { color: var(--gold); font-size: .8rem; white-space: nowrap; }
+  .empty-note { color: var(--muted); font-size: .82rem; }
+
+  /* ── Results ── */
+  .results-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
+  .results-header h2 { font-family: var(--serif); font-size: 1.4rem; }
+  .results-header .subtitle { font-size: .78rem; color: var(--muted); }
+  .cards { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px;
+    display: flex; align-items: center; gap: 16px;
+    position: relative; overflow: hidden;
+    transition: border-color .2s, transform .2s, box-shadow .2s;
+    animation: fadeUp .35s ease both;
+  }
+  .card:hover { border-color: var(--gold-dim); transform: translateX(4px); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--gold); opacity: 0; transition: opacity .2s; }
+  .card:hover::before { opacity: 1; }
+  .card-rank { font-family: var(--serif); font-style: italic; font-size: 1.7rem; color: var(--border); min-width: 34px; text-align: center; user-select: none; }
+  .card-body { flex: 1; min-width: 0; }
+  .card-title { font-family: var(--serif); font-size: .96rem; line-height: 1.3; margin-bottom: 5px; }
+  .card-genres { font-size: .67rem; color: var(--muted); }
+  .card-genres span { display: inline-block; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; margin: 2px 2px 2px 0; }
+  .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 72px; }
+  .rating-num { font-size: .88rem; font-weight: 500; color: var(--gold); }
+  .rating-bar-wrap { width: 56px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .rating-bar { height: 100%; background: linear-gradient(90deg, var(--gold-dim), var(--gold)); border-radius: 2px; transition: width .8s cubic-bezier(.4,0,.2,1); width: 0; }
+
+  /* State boxes */
+  .state-box { text-align: center; padding: 56px 24px; color: var(--muted); }
+  .state-box .icon { font-size: 2.4rem; margin-bottom: 14px; display: block; }
+  .state-box p { font-size: .88rem; line-height: 1.6; }
+  .spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 14px; }
+  .error-msg { background: rgba(192,57,43,.12); border: 1px solid rgba(192,57,43,.3); border-radius: var(--radius); padding: 12px 16px; font-size: .82rem; color: #e07070; margin-bottom: 20px; display: none; }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin   { to { transform: rotate(360deg); } }
+  .card:nth-child(1){animation-delay:.03s}.card:nth-child(2){animation-delay:.06s}
+  .card:nth-child(3){animation-delay:.09s}.card:nth-child(4){animation-delay:.12s}
+  .card:nth-child(5){animation-delay:.15s}.card:nth-child(6){animation-delay:.18s}
+  .card:nth-child(7){animation-delay:.21s}.card:nth-child(8){animation-delay:.24s}
+  .card:nth-child(9){animation-delay:.27s}.card:nth-child(10){animation-delay:.30s}
+
+  @media (max-width: 780px) {
+    .main-layout { grid-template-columns: 1fr; }
+    header { padding: 16px 20px; }
+    .session-badge { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Cine<span>Match</span></div>
+  <div class="header-right">
+    <div class="session-badge">Session ID: <strong id="sessionIdDisplay">—</strong></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="health-dot" id="hdot"></span>
+      <span class="status-text" id="htext">Checking API…</span>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <h1>Discover films<br><em>made for you.</em></h1>
+  <p>Rate movies you love and our model will learn your taste — recommendations improve with every rating.</p>
+</section>
+
+<!-- Onboarding hint -->
+<div style="padding:0 24px">
+  <div class="onboarding" style="margin:0 auto 32px">
+    <span class="onboarding-icon">💡</span>
+    <div class="onboarding-text">
+      <strong>How it works:</strong> Search for movies you've seen and rate them using the panel on the right.
+      After each rating the model retrains instantly — then hit <strong>Get Recommendations</strong> to see updated picks tailored to your taste.
+    </div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <div>
+    <label for="topn">Results</label>
+    <input type="number" id="topn" min="1" max="50" value="10" />
+  </div>
+  <button class="btn" id="recBtn" onclick="fetchRecs()">Get Recommendations</button>
+</div>
+
+<!-- Main layout -->
+<div class="main-layout">
+
+  <!-- Left: recommendations -->
+  <div>
+    <div class="error-msg" id="errMsg"></div>
+    <div class="results-header" id="resultsHeader" style="display:none">
+      <h2 id="resultsTitle"></h2>
+      <span class="subtitle" id="resultsSub"></span>
+    </div>
+    <div class="cards" id="cardsGrid"></div>
+    <div class="state-box" id="stateBox">
+      <span class="icon">🎬</span>
+      <p>Rate a few movies on the right, then click <strong>Get Recommendations</strong>.</p>
+    </div>
+  </div>
+
+  <!-- Right: search + rate + my ratings -->
+  <div class="side-panel">
+
+    <div class="panel-card">
+      <h3>Search &amp; Rate</h3>
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="Movie title…" oninput="debounceSearch()" />
+        <button class="btn btn-ghost btn-sm" onclick="clearSearch()">Clear</button>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+
+      <!-- Rate form -->
+      <div class="rate-form" id="rateForm">
+        <div class="rate-movie-title" id="rateMovieTitle"></div>
+        <div>
+          <label>Your rating</label>
+          <div class="star-picker" id="starPicker">
+            <span class="star-pick" data-val="1">★</span>
+            <span class="star-pick" data-val="2">★</span>
+            <span class="star-pick" data-val="3">★</span>
+            <span class="star-pick" data-val="4">★</span>
+            <span class="star-pick" data-val="5">★</span>
+          </div>
+        </div>
+        <div class="rate-actions">
+          <button class="btn btn-sm" onclick="submitRating()">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelRate()">Cancel</button>
+        </div>
+        <div class="retrain-indicator" id="retrainIndicator">
+          <div class="mini-spinner"></div> Retraining model…
+        </div>
+        <div class="rate-toast" id="rateToast"></div>
+      </div>
+    </div>
+
+    <div class="panel-card">
+      <h3>My Ratings <span style="font-size:.72rem;color:var(--muted);font-family:var(--mono);font-weight:300">(this session)</span></h3>
+      <div class="my-ratings-list" id="myRatingsList">
+        <span class="empty-note">No ratings yet — search for a movie above.</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = '';
+let SESSION_USER_ID = null;
+
+// ── Session init ──────────────────────────────────────────────────────────────
+async function initSession() {
+  try {
+    const d = await (await fetch(`${API}/api/session`)).json();
+    SESSION_USER_ID = d.user_id;
+    document.getElementById('sessionIdDisplay').textContent = SESSION_USER_ID;
+  } catch {
+    // Fallback: generate client-side if API unreachable
+    SESSION_USER_ID = 10000 + Math.floor(Math.random() * 99999);
+    document.getElementById('sessionIdDisplay').textContent = SESSION_USER_ID;
+  }
+}
+
+// ── Health ────────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const d   = await (await fetch(`${API}/health`)).json();
+    const dot = document.getElementById('hdot');
+    const txt = document.getElementById('htext');
+    dot.className = 'health-dot ok';
+    const flags = [];
+    if (!d.model_loaded)   flags.push('model missing');
+    if (!d.movies_loaded)  flags.push('movies.csv missing');
+    if (!d.ratings_loaded) flags.push('ratings.csv missing');
+    txt.textContent = flags.length ? `API online — ⚠ ${flags.join(', ')} (demo mode)` : 'API online';
+  } catch {
+    document.getElementById('hdot').className = 'health-dot err';
+    document.getElementById('htext').textContent = 'API unreachable';
+  }
+}
+
+// ── Recommendations ───────────────────────────────────────────────────────────
+async function fetchRecs() {
+  if (!SESSION_USER_ID) { showError('Session not ready yet, please wait.'); return; }
+  const topn = document.getElementById('topn').value;
+  const btn  = document.getElementById('recBtn');
+  document.getElementById('errMsg').style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Loading…';
+  showLoading();
+  try {
+    const res  = await fetch(`${API}/api/recommend?user_id=${SESSION_USER_ID}&n=${topn}`);
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || `HTTP ${res.status}`);
+    const data = await res.json();
+    renderCards(data.recommendations);
+  } catch(e) {
+    showError(`Error: ${e.message}`); showEmpty();
+  } finally {
+    btn.disabled = false; btn.textContent = 'Get Recommendations';
+  }
+}
+
+function renderCards(recs) {
+  const grid = document.getElementById('cardsGrid');
+  const hdr  = document.getElementById('resultsHeader');
+  document.getElementById('stateBox').style.display = 'none';
+  hdr.style.display = 'flex';
+  const ratingCount = document.getElementById('myRatingsList').querySelectorAll('.my-rating-row').length;
+  document.getElementById('resultsTitle').textContent = `Your top ${recs.length} picks`;
+  document.getElementById('resultsSub').textContent   = ratingCount
+    ? `Based on ${ratingCount} rating${ratingCount > 1 ? 's' : ''} this session`
+    : 'General recommendations — rate more to personalise';
+  grid.innerHTML = '';
+  recs.forEach((m, i) => {
+    const pct    = ((m.predicted_rating / 5) * 100).toFixed(1);
+    const genres = m.genres.split('|').map(g => `<span>${escHtml(g)}</span>`).join('');
+    const card   = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <span class="card-rank">${i+1}</span>
+      <div class="card-body">
+        <div class="card-title">${escHtml(m.title)}</div>
+        <div class="card-genres">${genres}</div>
+      </div>
+      <div class="card-right">
+        <span class="rating-num">${m.predicted_rating.toFixed(2)}</span>
+        <div class="rating-bar-wrap"><div class="rating-bar" data-pct="${pct}"></div></div>
+      </div>`;
+    grid.appendChild(card);
+  });
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.rating-bar').forEach(b => b.style.width = b.dataset.pct + '%');
+  });
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+let searchTimer;
+function debounceSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(doSearch, 280); }
+
+async function doSearch() {
+  const q   = document.getElementById('searchInput').value.trim();
+  const box = document.getElementById('searchResults');
+  if (!q) { box.style.display = 'none'; return; }
+  try {
+    const data = await (await fetch(`${API}/api/search?q=${encodeURIComponent(q)}`)).json();
+    box.style.display = 'block';
+    if (!Array.isArray(data) || !data.length) {
+      box.innerHTML = '<div class="sr-item" style="color:var(--muted)">No results.</div>';
+      return;
+    }
+    box.innerHTML = data.map(m => `
+      <div class="sr-item">
+        <div>
+          <div class="sr-title">${escHtml(m.title)}</div>
+          <div class="sr-genre">${escHtml(m.genres)}</div>
+        </div>
+        <button class="sr-rate-btn" onclick="selectMovieToRate(${m.movieId}, '${escJs(m.title)}')">Rate ★</button>
+      </div>`).join('');
+  } catch { box.style.display = 'none'; }
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchResults').style.display = 'none';
+}
+
+// ── Rating ────────────────────────────────────────────────────────────────────
+let selectedMovieId    = null;
+let selectedMovieTitle = '';
+let selectedStars      = 0;
+
+function selectMovieToRate(movieId, title) {
+  selectedMovieId    = movieId;
+  selectedMovieTitle = title;
+  selectedStars      = 0;
+  document.getElementById('rateMovieTitle').textContent = title;
+  document.getElementById('rateForm').classList.add('visible');
+  document.getElementById('rateToast').style.display = 'none';
+  document.getElementById('retrainIndicator').style.display = 'none';
+  resetStars();
+  document.getElementById('rateForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cancelRate() {
+  selectedMovieId = null; selectedMovieTitle = ''; selectedStars = 0;
+  document.getElementById('rateForm').classList.remove('visible');
+  resetStars();
+}
+
+function resetStars() {
+  document.querySelectorAll('.star-pick').forEach(s => s.classList.remove('lit'));
+}
+
+document.getElementById('starPicker').addEventListener('mouseover', e => {
+  const s = e.target.closest('.star-pick');
+  if (!s) return;
+  const val = +s.dataset.val;
+  document.querySelectorAll('.star-pick').forEach(el => el.classList.toggle('lit', +el.dataset.val <= val));
+});
+
+document.getElementById('starPicker').addEventListener('mouseleave', () => {
+  document.querySelectorAll('.star-pick').forEach(el => el.classList.toggle('lit', +el.dataset.val <= selectedStars));
+});
+
+document.getElementById('starPicker').addEventListener('click', e => {
+  const s = e.target.closest('.star-pick');
+  if (!s) return;
+  selectedStars = +s.dataset.val;
+  document.querySelectorAll('.star-pick').forEach(el => el.classList.toggle('lit', +el.dataset.val <= selectedStars));
+});
+
+async function submitRating() {
+  if (!selectedMovieId) return;
+  if (!selectedStars)   { showToast('Pick a star rating first.', 'error'); return; }
+  if (!SESSION_USER_ID) { showToast('Session not ready.', 'error'); return; }
+
+  const indicator = document.getElementById('retrainIndicator');
+  indicator.style.display = 'flex';
+  document.getElementById('rateToast').style.display = 'none';
+
+  try {
+    const res = await fetch(`${API}/api/rate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: SESSION_USER_ID, movie_id: selectedMovieId, rating: selectedStars }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Error');
+    indicator.style.display = 'none';
+    showToast(`Saved ${selectedStars}★`, 'success');
+    refreshMyRatings();
+    setTimeout(cancelRate, 1600);
+  } catch(e) {
+    indicator.style.display = 'none';
+    showToast(`Failed: ${e.message}`, 'error');
+  }
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('rateToast');
+  t.textContent = msg;
+  t.className = `rate-toast ${type}`;
+  t.style.display = 'block';
+}
+
+// ── My Ratings ────────────────────────────────────────────────────────────────
+async function refreshMyRatings() {
+  if (!SESSION_USER_ID) return;
+  const list = document.getElementById('myRatingsList');
+  try {
+    const data = await (await fetch(`${API}/api/my-ratings?user_id=${SESSION_USER_ID}`)).json();
+    const rows = data.ratings || [];
+    if (!rows.length) {
+      list.innerHTML = '<span class="empty-note">No ratings yet — search for a movie above.</span>';
+      return;
+    }
+    list.innerHTML = rows.map(r => `
+      <div class="my-rating-row">
+        <span class="my-rating-title">${escHtml(r.title || 'Movie ' + r.movieId)}</span>
+        <span class="my-rating-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+      </div>`).join('');
+  } catch {
+    list.innerHTML = '<span class="empty-note">Could not load ratings.</span>';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function showLoading() {
+  document.getElementById('cardsGrid').innerHTML = '';
+  document.getElementById('resultsHeader').style.display = 'none';
+  const b = document.getElementById('stateBox');
+  b.style.display = 'block';
+  b.innerHTML = '<div class="spinner"></div><p>Generating recommendations…</p>';
+}
+function showEmpty() {
+  const b = document.getElementById('stateBox');
+  b.style.display = 'block';
+  b.innerHTML = '<span class="icon">🎬</span><p>No results.</p>';
+}
+function showError(msg) {
+  const el = document.getElementById('errMsg');
+  el.textContent = msg; el.style.display = 'block';
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escJs(s) {
+  return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await Promise.all([initSession(), checkHealth()]);
+})();
+</script>
+</body>
+</html>
