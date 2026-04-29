@@ -298,7 +298,26 @@
 <!-- Genre filter -->
 <div class="genre-filter-wrap">
   <span class="genre-filter-label">Filter by genre</span>
-  <div class="genre-pills" id="genrePills"></div>
+  <div class="genre-pills" id="genrePills">
+    <span class="genre-pill" onclick="toggleGenre('Action', this)">Action</span>
+    <span class="genre-pill" onclick="toggleGenre('Adventure', this)">Adventure</span>
+    <span class="genre-pill" onclick="toggleGenre('Animation', this)">Animation</span>
+    <span class="genre-pill" onclick="toggleGenre('Children', this)">Children</span>
+    <span class="genre-pill" onclick="toggleGenre('Comedy', this)">Comedy</span>
+    <span class="genre-pill" onclick="toggleGenre('Crime', this)">Crime</span>
+    <span class="genre-pill" onclick="toggleGenre('Documentary', this)">Documentary</span>
+    <span class="genre-pill" onclick="toggleGenre('Drama', this)">Drama</span>
+    <span class="genre-pill" onclick="toggleGenre('Fantasy', this)">Fantasy</span>
+    <span class="genre-pill" onclick="toggleGenre('Film-Noir', this)">Film-Noir</span>
+    <span class="genre-pill" onclick="toggleGenre('Horror', this)">Horror</span>
+    <span class="genre-pill" onclick="toggleGenre('Musical', this)">Musical</span>
+    <span class="genre-pill" onclick="toggleGenre('Mystery', this)">Mystery</span>
+    <span class="genre-pill" onclick="toggleGenre('Romance', this)">Romance</span>
+    <span class="genre-pill" onclick="toggleGenre('Sci-Fi', this)">Sci-Fi</span>
+    <span class="genre-pill" onclick="toggleGenre('Thriller', this)">Thriller</span>
+    <span class="genre-pill" onclick="toggleGenre('War', this)">War</span>
+    <span class="genre-pill" onclick="toggleGenre('Western', this)">Western</span>
+  </div>
 </div>
 
 <!-- Main layout -->
@@ -342,7 +361,7 @@
           </div>
         </div>
         <div class="rate-actions">
-          <button class="btn btn-sm" onclick="submitRating()">Save &amp; Retrain</button>
+          <button class="btn btn-sm" onclick="submitRating()">Save</button>
           <button class="btn btn-ghost btn-sm" onclick="cancelRate()">Cancel</button>
         </div>
         <div class="retrain-indicator" id="retrainIndicator">
@@ -468,7 +487,6 @@ function renderCards(recs) {
   grid.innerHTML = '';
   // Store full recs for filtering
   window._lastRecs = recs;
-  buildGenrePills(recs);
   recs.forEach((m, i) => {
     const genres = m.genres.split('|').map(g => `<span>${escHtml(g)}</span>`).join('');
     const card   = document.createElement('div');
@@ -479,7 +497,8 @@ function renderCards(recs) {
       <div class="card-body">
         <div class="card-title">${escHtml(m.title)}</div>
         <div class="card-genres">${genres}</div>
-      </div>`;
+      </div>
+      <div style="font-size:.88rem;font-weight:500;color:var(--gold);min-width:36px;text-align:right">${m.predicted_rating.toFixed(2)}</div>`;
     grid.appendChild(card);
   });
 
@@ -487,27 +506,6 @@ function renderCards(recs) {
 
 // ── Genre filter ─────────────────────────────────────────────────────────────
 let activeGenres = new Set();
-
-const ALL_GENRES = [
-  'Action','Adventure','Animation','Children','Comedy','Crime',
-  'Documentary','Drama','Fantasy','Film-Noir','Horror','Musical',
-  'Mystery','Romance','Sci-Fi','Thriller','War','Western'
-];
-
-function buildGenrePills(recs) {
-  const present = new Set();
-  recs.forEach(m => m.genres.split('|').forEach(g => present.add(g)));
-  // Show all genres; dim ones not in current results
-  const container = document.getElementById('genrePills');
-  container.innerHTML = '';
-  ALL_GENRES.forEach(g => {
-    const pill = document.createElement('span');
-    pill.className = 'genre-pill' + (activeGenres.has(g) ? ' active' : '');
-    pill.textContent = g;
-    pill.onclick = () => toggleGenre(g, pill);
-    container.appendChild(pill);
-  });
-}
 
 function toggleGenre(genre, pill) {
   if (activeGenres.has(genre)) {
@@ -517,7 +515,7 @@ function toggleGenre(genre, pill) {
     activeGenres.add(genre);
     pill.classList.add('active');
   }
-  fetchRecs();
+  // fetchRecs();
 }
 
 
@@ -679,8 +677,9 @@ function escJs(s) {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
   await checkHealth();
-  showSessionPicker(); // always show modal on load
+  showSessionPicker();
 })();
+
 </script>
 </body>
 </html>
