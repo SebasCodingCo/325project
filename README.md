@@ -1,5 +1,10 @@
 # Movie Recommender
 
+## Original Model code:
+
+https://colab.research.google.com/drive/1NSnuXZKQCPMuDJXADh9uzkIPPq4nm4Kz?usp=sharing
+
+
 ## Setup in 3 steps
 
 ### 1. Start up the venv
