@@ -1,5 +1,7 @@
 # Movie Recommender
 
+[MovieRecommender Notebook](MovieRecommenderFinal.ipynb)
+
 ## Setup in 3 steps
 
 ### 1. Start up the venv
