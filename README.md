@@ -1,6 +1,9 @@
 # Movie Recommender
 
-[MovieRecommender Notebook](MovieRecommenderFinal.ipynb)
+## Original Model code:
+
+https://colab.research.google.com/drive/1NSnuXZKQCPMuDJXADh9uzkIPPq4nm4Kz?usp=sharing
+
 
 ## Setup in 3 steps
 
